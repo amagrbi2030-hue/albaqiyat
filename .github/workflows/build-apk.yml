@@ -1,0 +1,60 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          ZIP=$(ls *.zip | head -n 1)
+          echo "Using $ZIP"
+          unzip -o -q "$ZIP" -d app
+          if [ -f app/package.json ]; then DIR=app; else DIR=$(dirname "$(ls app/*/package.json | head -n 1)"); fi
+          echo "APP=$DIR" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install packages
+        working-directory: ${{ env.APP }}
+        run: npm install
+
+      - name: Create Android project
+        working-directory: ${{ env.APP }}
+        run: npx cap add android
+
+      - name: App icon and splash
+        working-directory: ${{ env.APP }}
+        run: npx @capacitor/assets generate --android
+        continue-on-error: true
+
+      - name: Sounds and permissions
+        working-directory: ${{ env.APP }}
+        run: node scripts/setup-android.js
+
+      - name: Sync
+        working-directory: ${{ env.APP }}
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: ${{ env.APP }}/android
+        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: albaqiyat-apk
+          path: ${{ env.APP }}/android/app/build/outputs/apk/debug/app-debug.apk
