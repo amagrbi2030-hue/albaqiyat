@@ -9,15 +9,31 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Unzip project
+      - name: Unzip project (newest zip only)
         run: |
           ls -la
-          ZIP=$(ls *.zip | head -n 1)
+          # يُستخدم دائماً أحدث ملف zip رُفع إلى المستودع (وليس أول ملف أبجدياً)
+          ZIP=""
+          NEWEST=0
+          for f in *.zip; do
+            [ -e "$f" ] || continue
+            T=$(git log -1 --format=%ct -- "$f" 2>/dev/null)
+            T=${T:-0}
+            if [ "$T" -ge "$NEWEST" ] && unzip -l "$f" | grep -q "package.json"; then NEWEST=$T; ZIP="$f"; fi
+          done
+          if [ -z "$ZIP" ]; then echo "::error::لا يوجد ملف مشروع zip يحتوي package.json"; exit 1; fi
           echo "Using $ZIP"
+          rm -rf app
           unzip -o -q "$ZIP" -d app
           if [ -f app/package.json ]; then DIR=app; else DIR=$(dirname "$(ls app/*/package.json | head -n 1)"); fi
           echo "APP=$DIR" >> "$GITHUB_ENV"
+          VER=$(grep -o "const APP_BUILD='[^']*'" "$DIR/www/index.html" | head -n 1)
+          echo "ZIP المستخدم: $ZIP" >> "$GITHUB_STEP_SUMMARY"
+          echo "إصدار التطبيق داخل الملف: $VER" >> "$GITHUB_STEP_SUMMARY"
+          echo "$VER"
 
       - uses: actions/setup-node@v5
         with:
@@ -60,3 +76,4 @@ jobs:
         with:
           name: albaqiyat-apk
           path: ${{ env.APP }}/android/app/build/outputs/apk/debug/app-debug.apk
+
